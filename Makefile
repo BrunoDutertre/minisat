@@ -1,8 +1,17 @@
 ###################################################################################################
-
 .PHONY:	r d p sh cr cd cp csh lr ld lp lsh config all install install-headers install-lib\
         install-bin clean distclean
 all:	r lr lsh
+
+## Try to find OS
+
+SHELL=/bin/sh
+
+ifeq ($(OS),Windows_NT)
+  DETECTED_OS=WINDOWS
+else
+  DETECTED_OS=$(shell uname 2>/dev/null || echo "unknown")
+endif
 
 ## Load Previous Configuration ####################################################################
 
@@ -49,25 +58,35 @@ datarootdir ?= $(prefix)/share
 mandir      ?= $(datarootdir)/man
 
 # Target file names
-MINISAT      = minisat#       Name of MiniSat main executable.
-MINISAT_CORE = minisat_core#  Name of simplified MiniSat executable (only core solver support).
-MINISAT_SLIB = lib$(MINISAT).a#  Name of MiniSat static library.
-MINISAT_DLIB = lib$(MINISAT).so# Name of MiniSat shared library.
+MINISAT      = minisat             # Name of MiniSat main executable.
+MINISAT_CORE = minisat_core        # Name of simplified MiniSat executable (only core solver support).
+MINISAT_SLIB = libminisat.a     # Name of MiniSat static library.
 
 # Shared Library Version
 SOMAJOR=2
 SOMINOR=1
-SORELEASE?=.0#   Declare empty to leave out from library file name.
+SORELEASE?=.0                      # Declare empty to leave out from library file name.
+
+#
+# Shared library file + version
+#
+ifeq ($(DETECTED_OS),Darwin)
+MINISAT_DLIB = libminisat.dylib
+MINISAT_DLIB_MAJOR = libminisat.$(SOMAJOR).dylib
+MINISAT_DLIB_FULL = libminisat.$(SOMAJOR).$(SOMINOR).dylib
+MINISAT_DLIB_VERSION = $(SOMAJOR).$(SOMINOR)$(SORELEASE)
+MINISAT_DLIB_COMPATIBILITY = $(SOMAJOR).$(SOMINOR).0
+else
+MINISAT_DLIB = libminisat.so
+MINISAT_DLIB_MAJOR = $(MINISAT_DLIB).$(SOMAJOR)
+MINISAT_DLIB_FULL = $(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE)
+endif
+
 
 MINISAT_CXXFLAGS = -I. -D __STDC_LIMIT_MACROS -D __STDC_FORMAT_MACROS -Wall -Wno-parentheses -Wextra
 MINISAT_LDFLAGS  = -Wall -lz
 
 ECHO=@echo
-ifeq ($(VERB),)
-VERB=@
-else
-VERB=
-endif
 
 SRCS = $(wildcard minisat/core/*.cc) $(wildcard minisat/simp/*.cc) $(wildcard minisat/utils/*.cc)
 HDRS = $(wildcard minisat/mtl/*.h) $(wildcard minisat/core/*.h) $(wildcard minisat/simp/*.h) $(wildcard minisat/utils/*.h)
@@ -75,7 +94,7 @@ OBJS = $(filter-out %Main.o, $(SRCS:.cc=.o))
 
 r:	$(BUILD_DIR)/release/bin/$(MINISAT)
 d:	$(BUILD_DIR)/debug/bin/$(MINISAT)
-p:	$(BUILD_DIR)/profile/bin/$(MINISAT)
+op:	$(BUILD_DIR)/profile/bin/$(MINISAT)
 sh:	$(BUILD_DIR)/dynamic/bin/$(MINISAT)
 
 cr:	$(BUILD_DIR)/release/bin/$(MINISAT_CORE)
@@ -86,7 +105,7 @@ csh:	$(BUILD_DIR)/dynamic/bin/$(MINISAT_CORE)
 lr:	$(BUILD_DIR)/release/lib/$(MINISAT_SLIB)
 ld:	$(BUILD_DIR)/debug/lib/$(MINISAT_SLIB)
 lp:	$(BUILD_DIR)/profile/lib/$(MINISAT_SLIB)
-lsh:	$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE)
+lsh:	$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
 
 ## Build-type Compile-flags:
 $(BUILD_DIR)/release/%.o:			MINISAT_CXXFLAGS +=$(MINISAT_REL) $(MINISAT_RELSYM)
@@ -96,9 +115,9 @@ $(BUILD_DIR)/dynamic/%.o:			MINISAT_CXXFLAGS +=$(MINISAT_REL) $(MINISAT_FPIC)
 
 ## Build-type Link-flags:
 $(BUILD_DIR)/profile/bin/$(MINISAT):		MINISAT_LDFLAGS += -pg
-$(BUILD_DIR)/release/bin/$(MINISAT):		MINISAT_LDFLAGS += --static $(MINISAT_RELSYM)
+$(BUILD_DIR)/release/bin/$(MINISAT):		MINISAT_LDFLAGS += $(MINISAT_RELSYM)
 $(BUILD_DIR)/profile/bin/$(MINISAT_CORE):	MINISAT_LDFLAGS += -pg
-$(BUILD_DIR)/release/bin/$(MINISAT_CORE):	MINISAT_LDFLAGS += --static $(MINISAT_RELSYM)
+$(BUILD_DIR)/release/bin/$(MINISAT_CORE):	MINISAT_LDFLAGS += $(MINISAT_RELSYM)
 
 ## Executable dependencies
 $(BUILD_DIR)/release/bin/$(MINISAT):	 	$(BUILD_DIR)/release/minisat/simp/Main.o $(BUILD_DIR)/release/lib/$(MINISAT_SLIB)
@@ -118,8 +137,8 @@ $(BUILD_DIR)/dynamic/bin/$(MINISAT_CORE): 	$(BUILD_DIR)/dynamic/minisat/core/Mai
 $(BUILD_DIR)/release/lib/$(MINISAT_SLIB):	$(foreach o,$(OBJS),$(BUILD_DIR)/release/$(o))
 $(BUILD_DIR)/debug/lib/$(MINISAT_SLIB):		$(foreach o,$(OBJS),$(BUILD_DIR)/debug/$(o))
 $(BUILD_DIR)/profile/lib/$(MINISAT_SLIB):	$(foreach o,$(OBJS),$(BUILD_DIR)/profile/$(o))
-$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE)\
- $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR)\
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL) \
+ $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR) \
  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):	$(foreach o,$(OBJS),$(BUILD_DIR)/dynamic/$(o))
 
 ## Compile rules (these should be unified, buit I have not yet found a way which works in GNU Make)
@@ -151,20 +170,29 @@ $(BUILD_DIR)/release/bin/$(MINISAT_CORE) $(BUILD_DIR)/debug/bin/$(MINISAT_CORE) 
 	$(VERB) $(CXX) $^ $(MINISAT_LDFLAGS) $(LDFLAGS) -o $@
 
 ## Static Library rule
-%/lib/$(MINISAT_SLIB):
+$(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/debug/lib/$(MINISAT_SLIB) $(BUILD_DIR)/profile/lib/$(MINISAT_SLIB):
 	$(ECHO) Linking Static Library: $@
 	$(VERB) mkdir -p $(dir $@)
 	$(VERB) $(AR) -rcs $@ $^
 
 ## Shared Library rule
-$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE)\
- $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR)\
- $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):
+ifeq ($(DETECTED_OS),Darwin)
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):
 	$(ECHO) Linking Shared Library: $@
 	$(VERB) mkdir -p $(dir $@)
-	$(VERB) $(CXX) $(MINISAT_LDFLAGS) $(LDFLAGS) -o $@ -shared -Wl,-soname,$(MINISAT_DLIB).$(SOMAJOR) $^
-	$(VERB) ln -sf $(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR)
-	$(VERB) ln -sf $(MINISAT_DLIB).$(SOMAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
+	$(VERB) $(CXX) $(MINISAT_LDFLAGS) $(LDFLAGS) -o $@ -dynamiclib \
+	  -current_version $(MINISAT_DLIB_VERSION) \
+	  -compatibility_version $(MINISAT_DLIB_COMPATIBILITY) $^
+	$(VERB) ln -sf $(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
+
+else
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):
+	$(ECHO) Linking Shared Library: $@
+	$(VERB) mkdir -p $(dir $@)
+	$(VERB) $(CXX) $(MINISAT_LDFLAGS) $(LDFLAGS) -o $@ -shared -Wl,-soname,$(MINISAT_DLIB_MAJOR) $^
+	$(VERB) ln -sf $(MINISAT_DLIB_FULL) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR)
+	$(VERB) ln -sf $(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
+endif
 
 install:	install-headers install-lib install-bin
 install-debug:	install-headers install-lib-debug
@@ -184,12 +212,21 @@ install-lib-debug: $(BUILD_DIR)/debug/lib/$(MINISAT_SLIB)
 	$(INSTALL) -d $(DESTDIR)$(libdir)
 	$(INSTALL) -m 644 $(BUILD_DIR)/debug/lib/$(MINISAT_SLIB) $(DESTDIR)$(libdir)
 
-install-lib: $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE)
+## Shared Library rule
+ifeq ($(DETECTED_OS),Darwin)
+install-lib: $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR)
 	$(INSTALL) -d $(DESTDIR)$(libdir)
-	$(INSTALL) -m 644 $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE) $(DESTDIR)$(libdir)
-	ln -sf $(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE) $(DESTDIR)$(libdir)/$(MINISAT_DLIB).$(SOMAJOR)
-	ln -sf $(MINISAT_DLIB).$(SOMAJOR) $(DESTDIR)$(libdir)/$(MINISAT_DLIB)
+	$(INSTALL) -m 644 $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR) $(DESTDIR)$(libdir)
+	ln -sf $(MINISAT_DLIB_MAJOR) $(DESTDIR)$(libdir)/$(MINISAT_DLIB)
 	$(INSTALL) -m 644 $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(DESTDIR)$(libdir)
+else
+install-lib: $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL)
+	$(INSTALL) -d $(DESTDIR)$(libdir)
+	$(INSTALL) -m 644 $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL) $(DESTDIR)$(libdir)
+	ln -sf $(MINISAT_DLIB_FULL) $(DESTDIR)$(libdir)/$(MINISAT_DLIB_MAJOR)
+	ln -sf $(MINISAT_DLIB_MAJOR) $(DESTDIR)$(libdir)/$(MINISAT_DLIB)
+	$(INSTALL) -m 644 $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(DESTDIR)$(libdir)
+endif
 
 install-bin: $(BUILD_DIR)/dynamic/bin/$(MINISAT)
 	$(INSTALL) -d $(DESTDIR)$(bindir)
@@ -200,8 +237,8 @@ clean:
           $(foreach t, release debug profile dynamic, $(foreach d, $(SRCS:.cc=.d), $(BUILD_DIR)/$t/$d)) \
 	  $(foreach t, release debug profile dynamic, $(BUILD_DIR)/$t/bin/$(MINISAT_CORE) $(BUILD_DIR)/$t/bin/$(MINISAT)) \
 	  $(foreach t, release debug profile, $(BUILD_DIR)/$t/lib/$(MINISAT_SLIB)) \
-	  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR).$(SOMINOR)$(SORELEASE)\
-	  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB).$(SOMAJOR)\
+	  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL) \
+	  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR) \
 	  $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
 
 distclean:	clean
