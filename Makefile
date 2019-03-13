@@ -137,9 +137,9 @@ $(BUILD_DIR)/dynamic/bin/$(MINISAT_CORE): 	$(BUILD_DIR)/dynamic/minisat/core/Mai
 $(BUILD_DIR)/release/lib/$(MINISAT_SLIB):	$(foreach o,$(OBJS),$(BUILD_DIR)/release/$(o))
 $(BUILD_DIR)/debug/lib/$(MINISAT_SLIB):		$(foreach o,$(OBJS),$(BUILD_DIR)/debug/$(o))
 $(BUILD_DIR)/profile/lib/$(MINISAT_SLIB):	$(foreach o,$(OBJS),$(BUILD_DIR)/profile/$(o))
-$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL) \
- $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR) \
- $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):	$(foreach o,$(OBJS),$(BUILD_DIR)/dynamic/$(o))
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL):  $(foreach o,$(OBJS),$(BUILD_DIR)/dynamic/$(o))
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR): $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL)
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):	$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR)
 
 ## Compile rules (these should be unified, buit I have not yet found a way which works in GNU Make)
 $(BUILD_DIR)/release/%.o:	%.cc
@@ -177,22 +177,27 @@ $(BUILD_DIR)/release/lib/$(MINISAT_SLIB) $(BUILD_DIR)/debug/lib/$(MINISAT_SLIB) 
 
 ## Shared Library rule
 ifeq ($(DETECTED_OS),Darwin)
-$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL):
 	$(ECHO) Linking Shared Library: $@
 	$(VERB) mkdir -p $(dir $@)
 	$(VERB) $(CXX) $(MINISAT_LDFLAGS) $(LDFLAGS) -o $@ -dynamiclib \
 	  -current_version $(MINISAT_DLIB_VERSION) \
-	  -compatibility_version $(MINISAT_DLIB_COMPATIBILITY) $^
-	$(VERB) ln -sf $(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
-
+	  -compatibility_version $(MINISAT_DLIB_COMPATIBILITY) \
+	-Wl,-install_name,$(MINISAT_DLIB_MAJOR) $^
 else
-$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_FULL):
 	$(ECHO) Linking Shared Library: $@
 	$(VERB) mkdir -p $(dir $@)
 	$(VERB) $(CXX) $(MINISAT_LDFLAGS) $(LDFLAGS) -o $@ -shared -Wl,-soname,$(MINISAT_DLIB_MAJOR) $^
-	$(VERB) ln -sf $(MINISAT_DLIB_FULL) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR)
-	$(VERB) ln -sf $(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
 endif
+
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR):
+	$(ECHO) Creating Symbolic Link $(@)
+	ln -sf $(MINISAT_DLIB_FULL) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB_MAJOR)
+
+$(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB):
+	$(ECHO) Creating Symbolic Link $(@)
+	ln -sf $(MINISAT_DLIB_MAJOR) $(BUILD_DIR)/dynamic/lib/$(MINISAT_DLIB)
 
 install:	install-headers install-lib install-bin
 install-debug:	install-headers install-lib-debug
